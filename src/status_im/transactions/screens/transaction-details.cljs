@@ -56,8 +56,8 @@
    [rn/scroll-view st/details-screen-content-container
     [transactions-list-item/view transaction #(rf/dispatch [:navigate-to-modal :pending-transactions])]
     [common/separator st/details-separator st/details-separator-wrapper]
-    [details transaction]]
-   (when confirmed? [password-form/view 1])
+    [details transaction]
+    (when confirmed? [password-form/view 1])]
    (let [confirm-text (if confirmed?
                         (i18n/label :t/confirm)
                         (i18n/label-pluralize 1 :t/confirm-transactions))

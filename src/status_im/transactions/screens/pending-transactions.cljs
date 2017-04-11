@@ -54,9 +54,8 @@
     [rn/list-view {:style           st/transactions-list
                    :dataSource      (lw/to-datasource transactions)
                    :renderSeparator (render-separator-fn (count transactions))
-                   :renderRow       render-row-fn}]
-    (when confirmed?
-      [password-form/view (count transactions)])]
+                   :renderFooter    (when confirmed? #(rn/list-item [password-form/view (count transactions)]))
+                   :renderRow       render-row-fn}]]
    (let [confirm-text (if confirmed?
                         (i18n/label :t/confirm)
                         (i18n/label-pluralize (count transactions) :t/confirm-transactions))
