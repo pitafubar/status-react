@@ -35,13 +35,13 @@
 
 
 (defn fetch-commands!
-  [_ [{:keys [whisper-identity dapp? dapp-url]}]]
+  [_ [{:keys [whisper-identity dapp? dapp-url name]}]]
   (cond
     (= console-chat-id whisper-identity)
-    (dispatch [::validate-hash whisper-identity js-res/console-js])
+    (dispatch [::validate-hash whisper-identity name js-res/console-js])
 
     (= wallet-chat-id whisper-identity)
-    (dispatch [::validate-hash whisper-identity js-res/wallet-js])
+    (dispatch [::validate-hash whisper-identity name js-res/wallet-js])
 
     (and dapp? dapp-url)
     (http-get (s/join "/" [dapp-url commands-js])
@@ -50,16 +50,16 @@
                   (string? (.text response))
                   (when-let [content-type (.. response -headers (get "Content-Type"))]
                     (s/includes? "application/javascript" content-type))))
-              #(dispatch [::validate-hash whisper-identity %])
-              #(dispatch [::validate-hash whisper-identity js-res/dapp-js]))
+              #(dispatch [::validate-hash whisper-identity name %])
+              #(dispatch [::validate-hash whisper-identity name js-res/dapp-js]))
 
     :else
-    (dispatch [::validate-hash whisper-identity js-res/commands-js])))
+    (dispatch [::validate-hash whisper-identity name js-res/commands-js])))
 
 (defn dispatch-loaded!
-  [db [identity file]]
+  [db [identity name file]]
   (if (::valid-hash db)
-    (dispatch [::parse-commands! identity file])
+    (dispatch [::parse-commands! identity name file])
     (dispatch [::loading-failed! identity ::wrong-hash])))
 
 (defn get-hash-by-identity
@@ -71,7 +71,7 @@
   ;; todo tbd hashing algorithm
   (hash file))
 
-(defn parse-commands! [_ [identity file]]
+(defn parse-commands! [_ [identity name file]]
   (status/parse-jail identity file
                      (fn [result]
                        (let [{:keys [error result]} (json->clj result)]
@@ -79,11 +79,11 @@
                          (if error
                            (dispatch [::loading-failed! identity ::error-in-jail error])
                            (if identity
-                             (dispatch [::add-commands identity file result])
+                             (dispatch [::add-commands identity name file result])
                              (dispatch [::add-all-commands result])))))))
 
 (defn validate-hash
-  [db [identity file]]
+  [db [identity _ file]]
   (let [valid? true
         ;; todo check
         #_(= (get-hash-by-identity db identity)
@@ -107,39 +107,41 @@
        (into {})))
 
 (defn add-group-chat-command-owner-and-name
-  [id commands]
+  [name id commands]
   (let [group-chat? (subscribe [:group-chat?])]
     (if @group-chat?
       (->> commands
            (map (fn [[k v]]
                   [k (assoc v
-                         :command-owner (str id)
-                         :group-chat-command-name (str id "/" (:name v)))]))
+                            :command-owner (str id)
+                            :group-chat-command-name (if name
+                                                       (str name "/" (:name v))
+                                                       (:name v)))]))
            (into {}))
       commands)))
 
-(defn process-new-commands [account id commands]
+(defn process-new-commands [account name id commands]
   (->> commands
        (filter-forbidden-names account id)
-       (add-group-chat-command-owner-and-name id)
+       (add-group-chat-command-owner-and-name name id)
        (mark-as :command)))
        
 (defn add-commands
-  [db [id _ {:keys [commands responses autorun]}]]
+  [db [id name _ {:keys [commands responses autorun]}]]
   (let [account    @(subscribe [:get-current-account])
-        commands'  (process-new-commands account id commands)
+        commands'  (process-new-commands account name id commands)
         responses' (filter-forbidden-names account id responses)
         current-chat-id @(subscribe [:get-current-chat-id])
         current-commands (into {} (get-in db [current-chat-id :commands]))]
+    (dispatch [:add-key-log db])
       (-> db
           (assoc-in [current-chat-id :commands] (conj current-commands commands'))
           (assoc-in [current-chat-id :responses] (mark-as :response responses'))
           (assoc-in [current-chat-id :commands-loaded] true)
           (assoc-in [current-chat-id :autorun] autorun))))
 
-
 (defn save-commands-js!
-  [_ [id file]]
+  [_ [id _ file]]
   (commands/save {:chat-id id :file file}))
 
 (defn loading-failed!
